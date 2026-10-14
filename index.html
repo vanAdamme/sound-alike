@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound Alike</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --card: #fffdf9; --ink: #1f1d1a; --muted: #6b655c; --line: #e3ddd3;
+    --accent: #2f5d50; --accent-ink: #ffffff; --good: #2e7d4f; --bad: #b3412f; --chip: #efe9df;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614; --card: #211f1c; --ink: #f1ece4; --muted: #a59e93; --line: #35322d;
+      --accent: #7fb8a4; --accent-ink: #10201b; --good: #6cc191; --bad: #e58a77; --chip: #2b2925;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; min-height: 100vh;
+  }
+  main { width: 100%; max-width: 520px; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; }
+  h1 { font-size: 1.4rem; margin: 0; letter-spacing: .02em; }
+  .stats { color: var(--muted); font-size: .9rem; }
+  .banner { background: var(--chip); border-radius: 10px; padding: 10px 14px; font-size: .88rem; color: var(--muted); margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 20px; text-align: center; }
+  .clues { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 6px; }
+  .clue { font-size: 1.9rem; font-weight: 700; overflow-wrap: anywhere; }
+  .plus { color: var(--muted); font-size: 1.4rem; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 0 0 20px; }
+  form { display: flex; gap: 8px; }
+  input {
+    flex: 1; min-width: 0; font: inherit; font-size: 1.15rem; padding: 12px 14px;
+    border: 2px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink);
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  input:disabled { opacity: .5; }
+  button { font: inherit; cursor: pointer; border-radius: 10px; border: 0; padding: 12px 18px; }
+  button:disabled { cursor: default; opacity: .5; }
+  .primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .msg { min-height: 1.6em; margin: 14px 0 4px; font-weight: 600; }
+  .msg.good { color: var(--good); }
+  .msg.bad { color: var(--bad); }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+  .answer { font-size: 1.3rem; font-weight: 700; margin: 4px 0 8px; }
+  .wrong { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+  .wrong li {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    background: var(--chip); border-radius: 8px; padding: 6px 6px 6px 12px; text-align: left;
+  }
+  .wrong .w { text-decoration: line-through; color: var(--muted); overflow-wrap: anywhere; }
+  .dispute { font-size: .82rem; padding: 6px 10px; background: transparent; border: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+  .actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+  .hidden { display: none !important; }
+  footer { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Sound Alike</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="banner hidden" id="banner"></div>
+
+  <div class="card" id="status"><p id="statusText">Loading puzzles…</p></div>
+
+  <div class="card hidden" id="game">
+    <div class="clues">
+      <span class="clue" id="w1"></span><span class="plus">+</span><span class="clue" id="w2"></span>
+    </div>
+    <p class="hint">Find a word that fits both. The answers sound the same but are spelt differently, and any of them counts.</p>
+    <form id="form" autocomplete="off">
+      <input id="guess" type="text" autocapitalize="off" autocorrect="off" spellcheck="false"
+             enterkeyhint="go" aria-label="Your answer" placeholder="Your answer">
+      <button class="primary" type="submit" id="submit">Guess</button>
+    </form>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+    <div class="answer hidden" id="answer"></div>
+    <ul class="wrong" id="wrong"></ul>
+    <div class="actions">
+      <button class="ghost" id="giveup" type="button">Give up</button>
+      <button class="primary hidden" id="next" type="button">Next puzzle →</button>
+    </div>
+  </div>
+
+  <footer>No personal information is collected. Anonymous play data helps tune the puzzles.</footer>
+</main>
+
+<script>
+// ================= SETTINGS =================
+// Paste your Google Apps Script web app URL between the quotes (see the setup guide).
+// While it's empty, the game runs in demo mode with a few sample puzzles and saves nothing.
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAyQkAFyy_dttrV_M06htRJ_oCsUYOpMKA-1CKjmxNJSawqj9yxoe5DP9ePjG13xkB/exec";
+// ============================================
+
+const DEMO_PUZZLES = [
+  { id: "demo1", w1: "burden", w2: "vein",     answers: ["load", "lode"],         extra: [] },
+  { id: "demo2", w1: "ocean",  w2: "observe",  answers: ["sea", "see"],           extra: [] },
+  { id: "demo3", w1: "only",   w2: "spirit",   answers: ["sole", "soul"],         extra: [] },
+  { id: "demo4", w1: "couple", w2: "peel",     answers: ["pair", "pare", "pear"], extra: [] },
+  { id: "demo5", w1: "govern", w2: "restrain", answers: ["reign", "rein", "rain"], extra: [] }
+];
+
+// ---------- MATCHING START ----------
+// Turns a word into a standard form so that capitals, accents, punctuation and
+// common Australian/US spelling differences (colour/color, realise/realize, centre/center) all match.
+function canon(w) {
+  if (w.length >= 6) w = w.replace(/our(s?)$/, "or$1");
+  if (w.length >= 7) w = w.replace(/is(e|es|ed|ing|ation|ations)$/, "iz$1");
+  if (w.length >= 5) w = w.replace(/([^aeiou])re(s?)$/, "$1er$2");
+  return w;
+}
+// All the forms of a word we're willing to treat as "the same": as typed, and with a plural ending removed.
+function forms(raw) {
+  const w = String(raw).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
+  if (!w) return [];
+  const out = new Set([w]);
+  if (/ies$/.test(w) && w.length > 4) out.add(w.slice(0, -3) + "y");
+  if (/(s|x|z|ch|sh)es$/.test(w)) out.add(w.slice(0, -2));
+  if (/[^s]s$/.test(w) && w.length > 3) out.add(w.slice(0, -1));
+  return [...out].map(canon);
+}
+function isCorrect(guess, puzzle) {
+  const g = forms(guess);
+  const accepted = [...puzzle.answers, ...(puzzle.extra || [])].flatMap(forms);
+  return g.some(x => accepted.includes(x));
+}
+// ---------- MATCHING END ----------
+
+const $ = id => document.getElementById(id);
+let puzzles = [], queue = [], current = null, state = null;
+let solvedCount = 0, playedCount = 0, seenAll = false;
+
+// Anonymous player ID: a random code kept in this browser so repeat visits can be grouped. No personal info.
+const player = (() => {
+  try {
+    let id = localStorage.getItem("soundalike_player");
+    if (!id) { id = Math.random().toString(36).slice(2, 10); localStorage.setItem("soundalike_player", id); }
+    return id;
+  } catch (e) { return "anon-" + Math.random().toString(36).slice(2, 8); }
+})();
+
+// ----- Timer that only counts time while the page is visible -----
+let activeMs = 0, since = null;
+function startTimer() { activeMs = 0; since = document.hidden ? null : performance.now(); }
+function seconds() { return Math.round((activeMs + (since ? performance.now() - since : 0)) / 1000); }
+document.addEventListener("visibilitychange", () => {
+  if (!state || state.done) return;
+  if (document.hidden) { if (since) { activeMs += performance.now() - since; since = null; } }
+  else { since = performance.now(); }
+});
+
+// ----- Sending data to the Google Sheet -----
+function send(event, extra) {
+  const data = Object.assign({
+    player, puzzleId: current.id, word1: current.w1, word2: current.w2, event,
+    attempts: state.attempts, wrongGuesses: state.wrong.join(" | "), seconds: seconds()
+  }, extra || {});
+  if (!SCRIPT_URL) { console.log("[demo mode, not saved]", data); return; }
+  try {
+    fetch(SCRIPT_URL, {
+      method: "POST", mode: "no-cors", keepalive: true,
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(data)
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+// If someone leaves mid-puzzle after having a go, record it as abandoned.
+window.addEventListener("pagehide", () => {
+  if (current && state && !state.done && (state.attempts > 0 || seconds() >= 10)) {
+    send("abandoned");
+    state.done = true;
+  }
+});
+
+// ----- Game flow -----
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function nextPuzzle() {
+  if (!queue.length) {
+    if (playedCount > 0) {
+      seenAll = true;
+      showBanner("You've seen every puzzle. They'll start repeating from here.");
+    }
+    queue = shuffle(puzzles.slice());
+    if (current && queue.length > 1 && queue[0] === current) queue.push(queue.shift());
+  }
+  current = queue.shift();
+  state = { attempts: 0, wrong: [], done: false };
+  $("w1").textContent = current.w1;
+  $("w2").textContent = current.w2;
+  $("msg").textContent = ""; $("msg").className = "msg";
+  $("answer").classList.add("hidden");
+  $("wrong").innerHTML = "";
+  $("guess").value = ""; $("guess").disabled = false; $("submit").disabled = false;
+  $("giveup").classList.remove("hidden");
+  $("next").classList.add("hidden");
+  startTimer();
+  $("guess").focus();
+}
+
+function say(text, kind) { const m = $("msg"); m.textContent = text; m.className = "msg " + (kind || ""); }
+
+function addWrong(word) {
+  const li = document.createElement("li");
+  const span = document.createElement("span"); span.className = "w"; span.textContent = word;
+  const btn = document.createElement("button"); btn.type = "button"; btn.className = "dispute";
+  btn.textContent = "I disagree";
+  btn.title = "I think this answer should count";
+  btn.addEventListener("click", () => {
+    send("dispute", { disputed: word });
+    btn.textContent = "Noted, thanks"; btn.disabled = true;
+  });
+  li.append(span, btn);
+  $("wrong").append(li);
+}
+
+function finish(event) {
+  state.done = true;
+  playedCount++;
+  if (event === "solved") solvedCount++;
+  send(event);
+  $("answer").textContent = current.answers.join(" / ");
+  $("answer").classList.remove("hidden");
+  $("guess").disabled = true; $("submit").disabled = true;
+  $("giveup").classList.add("hidden");
+  $("next").classList.remove("hidden");
+  $("next").focus();
+  updateStats();
+}
+
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!state || state.done) return;
+  const guess = $("guess").value.trim().toLowerCase();
+  if (!guess) return;
+  if (state.wrong.includes(guess)) { say("You've already tried that one.", "bad"); return; }
+  const clueForms = [...forms(current.w1), ...forms(current.w2)];
+  if (forms(guess).some(f => clueForms.includes(f))) { say("That's one of the clues!", "bad"); return; }
+  state.attempts++;
+  if (isCorrect(guess, current)) {
+    say(state.attempts === 1 ? "Correct, first try!" : "Correct!", "good");
+    finish("solved");
+  } else {
+    state.wrong.push(guess);
+    addWrong(guess);
+    say("Not quite. Try again.", "bad");
+    const card = $("game"); card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
+    $("guess").value = ""; $("guess").focus();
+  }
+});
+$("giveup").addEventListener("click", () => {
+  if (!state || state.done) return;
+  say("The answer was:", "");
+  finish("gave_up");
+});
+$("next").addEventListener("click", nextPuzzle);
+
+function updateStats() { $("stats").textContent = playedCount ? `Solved ${solvedCount} of ${playedCount}` : ""; }
+function showBanner(text) { $("banner").textContent = text; $("banner").classList.remove("hidden"); }
+function showStatus(text) { $("statusText").textContent = text; $("status").classList.remove("hidden"); $("game").classList.add("hidden"); }
+
+async function load() {
+  if (!SCRIPT_URL) {
+    puzzles = DEMO_PUZZLES;
+    showBanner("Demo mode: 5 sample puzzles, and nothing is being saved yet.");
+  } else {
+    try {
+      const res = await fetch(SCRIPT_URL);
+      const json = await res.json();
+      puzzles = (json.puzzles || []).filter(p => p.w1 && p.w2 && p.answers && p.answers.length);
+      if (!puzzles.length) throw new Error("No puzzles found in the sheet");
+    } catch (err) {
+      console.error(err);
+      showStatus("Sorry, the puzzles couldn't be loaded. Please refresh the page in a moment.");
+      return;
+    }
+  }
+  $("status").classList.add("hidden");
+  $("game").classList.remove("hidden");
+  nextPuzzle();
+}
+load();
+</script>
+</body>
+</html>
